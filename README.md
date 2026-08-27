@@ -18,8 +18,11 @@ Getting started
     $ ./mbox -h          : help
     $ ./mbox ls          : give it a shot
     $ ./testall.sh       : test all unit tests
-    
+
     $ ./mbox -s ls       : run ls with seccomp/bpf (if supported)
+
+For an optimized build, runtime option details, and important security limitations,
+see [the setup and runtime guide](doc/SETUP_HIGH_PERFORMANCE.md).
 
 Use cases
 =========
