@@ -21,7 +21,8 @@ Getting started
 
     $ ./mbox -s ls       : run ls with seccomp/bpf (if supported)
 
-For an optimized build and guidance on running with the strongest sandboxing options, see `doc/SETUP_HIGH_PERFORMANCE.md`.
+For an optimized build, runtime option details, and important security limitations,
+see [the setup and runtime guide](doc/SETUP_HIGH_PERFORMANCE.md).
 
 Use cases
 =========

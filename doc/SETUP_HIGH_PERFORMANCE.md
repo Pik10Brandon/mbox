@@ -1,64 +1,102 @@
-# High-performance setup and run guide
+# Optimized build and sandbox options
 
-This guide walks through building **mbox** with an optimized configuration and running it with strong sandbox coverage. It keeps the defaults simple while ensuring the sandbox uses available kernel features (seccomp/BPF and ptrace) and that binaries are built with release-grade flags.
+This guide builds **mbox** with compiler optimizations and explains the most
+restrictive runtime option combination that the current implementation offers.
 
-## Prerequisites
+> [!WARNING]
+> Mbox is an x86-64 Linux research prototype built around `ptrace` syscall
+> interposition. It is not a container runtime or a hardened security boundary.
+> Do not rely on it as the only protection for hostile code.
 
-1. Install build tools and headers (example for Debian/Ubuntu):
-   ```bash
-   sudo apt update
-   sudo apt install -y build-essential pkg-config libcap-dev
-   ```
-2. From the repository root, work inside `src/`:
-   ```bash
-   cd src
-   ```
+## Requirements
 
-## Build steps (optimized)
+- An x86-64 Linux host whose security policy permits unprivileged
+  `PTRACE_TRACEME`.
+- A kernel that supports seccomp filters and `PTRACE_O_TRACESECCOMP` if you plan
+  to use `-s`.
+- A C build toolchain and OpenSSL development headers.
 
-1. Copy the default configuration template:
-   ```bash
-   cp {.,}configsbox.h
-   ```
-2. Configure with release-friendly flags (keeps debug symbols off and enables common optimizations):
-   ```bash
-   CFLAGS="-O2 -pipe" ./configure --prefix=/usr/local
-   ```
-3. Compile using all available cores:
-   ```bash
-   make -j"$(nproc)"
-   ```
-4. Run the built-in checks to verify syscall interception logic:
-   ```bash
-   ./testall.sh
-   ```
+On Debian or Ubuntu:
 
-## Running with maximum protections
+```bash
+sudo apt update
+sudo apt install -y build-essential libssl-dev
+```
 
-* To enable seccomp/BPF filtering (when supported by the kernel), use `-s`:
-  ```bash
-  ./mbox -s -- /bin/echo "hello from mbox"
-  ```
-* To cut network access entirely, pair seccomp with isolation flags:
-  ```bash
-  ./mbox -s -n -i -- /bin/echo "offline sandbox"
-  ```
-* For profile-based policies (filesystem/network allowlists or blocks), craft a profile under `doc/NOTE.profile` format and run:
-  ```bash
-  ./mbox -p /path/to/profile -s -- <command>
-  ```
+The checked-in `configure` script is sufficient; rebuilding it with Autoconf or
+Automake is not required.
 
-## Installation (optional)
+## Optimized build
 
-After testing, install the binary and manpage into `/usr/local`:
+Run these commands from the repository root:
+
+```bash
+cd src
+cp .configsbox.h configsbox.h
+CFLAGS="-O2 -pipe" ./configure --prefix=/usr/local
+make -j"$(nproc)"
+```
+
+`-O2` optimizes the resulting binary. `-pipe` can make compilation faster but
+does not change runtime performance. `make -j"$(nproc)"` only parallelizes the
+build.
+
+## Validate the build
+
+First check the command-line interface, then exercise both tracing modes:
+
+```bash
+./mbox -h
+./mbox -i -- /bin/echo "ptrace mode works"
+./mbox -s -i -- /bin/echo "seccomp-assisted mode works"
+```
+
+Both runtime checks must succeed without `sudo`. An error such as
+`PTRACE_TRACEME doesn't work: Operation not permitted` means that the outer
+container, sandbox, or host security policy denied ptrace. Fix that policy on a
+development host instead of making root execution the normal setup.
+
+The legacy integration suite can also exercise filesystem behavior in both
+modes:
+
+```bash
+./testall.sh
+./testall.sh -s
+```
+
+Some tests invoke optional or obsolete external tools, including `gvim` and the
+old `pip search` command. Review an individual failure before treating a full
+suite failure as an mbox regression.
+
+## Choose runtime options
+
+| Option | What it does | What it does not do |
+| --- | --- | --- |
+| `-s` | Uses a seccomp/BPF filter so selected syscalls trigger ptrace handling. This is primarily a tracing-performance option. | It does not add a filesystem or network policy by itself. |
+| `-n` | Rejects creation of non-local sockets. | It does not create a network namespace, block Unix-domain sockets, or revoke inherited file descriptors. |
+| `-i` | Skips the interactive review/commit session when the command exits. | It is not an isolation option. |
+| `-p FILE` | Loads the experimental filesystem `hide`/`allow` rules described in `doc/NOTE.profile`. | The current loader does not enforce rules in the profile's `[network]` section. |
+
+For a non-interactive run with filesystem redirection, restricted socket
+creation, and seccomp-assisted tracing:
+
+```bash
+./mbox -s -n -i -- /bin/echo "sandbox smoke test"
+```
+
+If the host supports ptrace but not the seccomp tracing event, omit `-s`:
+
+```bash
+./mbox -n -i -- /bin/echo "sandbox smoke test"
+```
+
+These commands use the most restrictive general-purpose option combination
+implemented by mbox, but the limitations above still apply.
+
+## Optional installation
+
+After validation, install the `mbox` binary under `/usr/local/bin`:
+
 ```bash
 sudo make install
 ```
-
-## Quick health checklist
-
-- `./mbox -h` succeeds and lists options (including `-s` for seccomp/BPF).
-- `./testall.sh` passes on your target kernel.
-- The sandboxed commands run with `-s` do not require elevated privileges.
-
-These steps give you a repeatable, optimized build plus a runnable configuration that exercises mbox's strongest available sandboxing modes.
